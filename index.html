@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Theory 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,500&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  /* Layout concept: the canvas fills the window; a light HUD floats on top.
+     Title + stage row + status sit at the top, the explanation panel, energy
+     bar and hint sit at the bottom. One dark look (a lab-bench night scene). */
+  :root {
+    color-scheme: dark;
+    --bg: #04060c;
+    --bg-glow: #0b1226;
+    --ink: #e9edf7;
+    --ink-dim: #8d97b2;
+    --ink-faint: #566079;
+    --cloud: #5b8cff;       /* electron cloud */
+    --photon: #ffe58a;      /* photon energy */
+    --ripple: #ff6fa5;      /* ripple energy */
+    --line: rgba(190, 205, 255, .16);
+    --panel: rgba(9, 13, 25, .86);
+    --f-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --f-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --f-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--f-body);
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* ---- 3D stage ---- */
+  .stage {
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at 50% 48%, var(--bg-glow) 0%, var(--bg) 70%);
+  }
+  .stage canvas {
+    display: block; width: 100%; height: 100%;
+    touch-action: none;           /* lets a swipe turn the atom instead of scrolling */
+    cursor: grab;
+  }
+  .stage canvas.grabbing { cursor: grabbing; }
+
+  /* ---- floating text labels (positioned each frame from 3D anchors) ---- */
+  .tags { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .tag {
+    position: absolute; left: 0; top: 0;
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--f-mono); font-size: 11px; letter-spacing: .06em;
+    color: var(--ink); white-space: nowrap;
+    text-shadow: 0 0 8px #000, 0 0 3px #000;
+    will-change: transform;
+  }
+  .tag::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--dot, #fff); box-shadow: 0 0 6px var(--dot, #fff);
+  }
+  .tag.dim { color: var(--ink-dim); }
+  .tag[data-edge="r"]::after { content: '\2192'; }   /* arrow: this one has left the view */
+  .tag[data-edge="l"]::after { content: '\2190'; }
+
+  /* ---- HUD ---- */
+  .hud {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+    pointer-events: none;
+  }
+  .top { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  h1 {
+    margin: 0; font-family: var(--f-display); font-style: italic; font-weight: 500;
+    font-size: clamp(28px, 5vw, 40px); line-height: 1; letter-spacing: -.01em;
+  }
+  .stages {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none;
+    font-family: var(--f-mono); font-size: 12px; letter-spacing: .04em;
+  }
+  .stages li {
+    display: flex; align-items: center; gap: 7px; padding-bottom: 4px;
+    color: var(--ink-faint); border-bottom: 1px solid transparent;
+  }
+  .stages li::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
+  .stages li.done { color: var(--ink-dim); }
+  .stages li.on { color: var(--ink); border-bottom-color: var(--photon); }
+  .stages li.on::before { background: var(--photon); opacity: 1; box-shadow: 0 0 8px var(--photon); }
+  .status { margin: 0; font-size: 14px; line-height: 1.4; color: var(--ink-dim); max-width: 62ch; }
+
+  .bottom { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .panel {
+    pointer-events: auto;
+    align-self: center; width: min(580px, 100%); box-sizing: border-box;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 16px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--line);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+  }
+  .panel p { flex: 1; min-width: 0; margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink); }
+  .btn {
+    flex: none; pointer-events: auto; cursor: pointer;
+    font: 500 14px var(--f-body); color: #1a1500; background: var(--photon);
+    border: 0; border-radius: 8px; padding: 10px 20px;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  .foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; }
+  .energy { width: min(340px, 100%); font-family: var(--f-mono); font-size: 11px; letter-spacing: .04em; color: var(--ink-dim); }
+  .energy-head { display: flex; justify-content: space-between; }
+  .bar { display: flex; height: 10px; margin: 6px 0; border-radius: 5px; overflow: hidden; background: rgba(255, 255, 255, .06); }
+  .seg { display: block; height: 100%; }
+  .seg.photon { background: var(--photon); }
+  .seg.ripples { background: var(--ripple); }
+  .legend { display: flex; justify-content: space-between; gap: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .legend b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .hint { font-size: 12px; color: var(--ink-faint); }
+
+  @media (max-width: 520px) {
+    .panel { flex-direction: column; align-items: stretch; gap: 12px; }
+    .btn { padding: 12px 20px; }
+  }
+</style>
+</head>
+<body>
+
+
+<div class="stage" id="stage"><canvas id="gl" aria-label="3D simulation of a photon absorbed by an electron cloud and re-emitted"></canvas></div>
+
+<div class="tags" aria-hidden="true">
+  <span class="tag" id="tag-photon"  style="--dot: var(--photon)">photon</span>
+  <span class="tag" id="tag-cloud"   style="--dot: var(--cloud)">electron cloud</span>
+  <span class="tag" id="tag-nucleus" style="--dot: #fff">nucleus</span>
+  <span class="tag dim" id="tag-ghost" style="--dot: var(--ink-dim)">ghost photon</span>
+  <span class="tag" id="tag-new"     style="--dot: var(--photon)">new photon</span>
+</div>
+
+<div class="hud">
+  <div class="top">
+    <h1>Theory 2</h1>
+    <ol class="stages" id="stages">
+      <li>Approach</li><li>Absorbed</li><li>Rippling</li><li>Re-emitted</li>
+    </ol>
+    <p class="status" id="status" aria-live="polite">A photon travels toward the electron cloud.</p>
+  </div>
+
+  <div class="bottom">
+    <div class="panel" id="panel" role="dialog" aria-live="polite" hidden>
+      <p id="panelText"></p>
+      <button class="btn" id="btn" type="button">Continue</button>
+    </div>
+    <div class="foot">
+      <div class="energy">
+        <div class="energy-head"><span>Energy</span><span>total 100%</span></div>
+        <div class="bar" role="img" aria-label="Energy shared between photon and ripples, always 100% in total">
+          <i class="seg photon" id="segPhoton" style="width:100%"></i><i class="seg ripples" id="segRipples" style="width:0%"></i>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--photon)"></i>photon <b id="pPhoton">100%</b></span>
+          <span><i style="background:var(--ripple)"></i>ripples <b id="pRipples">0%</b></span>
+        </div>
+      </div>
+      <div class="hint">Drag to turn the atom.</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  if (!window.THREE) {
+    $('status').textContent = 'The 3D library did not load. Check your connection and reload the page.';
+    return;
+  }
+
+  /* =====================================================================
+   *  CONSTANTS  (all lengths are in "scene units"; the cloud radius is 2)
+   * ===================================================================== */
+  var CAM_Z      = 12;      // fixed observer distance. It never changes.
+  var R          = 2.0;     // electron-cloud radius
+  var OFFSET_Y   = 0.7;     // the photon line passes this far above the nucleus
+  var HALF_CHORD = Math.sqrt(R * R - OFFSET_Y * OFFSET_Y);
+  var ENTRY      = new THREE.Vector3(-HALF_CHORD, OFFSET_Y, 0); // where the line enters the cloud
+  var EXIT       = new THREE.Vector3( HALF_CHORD, OFFSET_Y, 0); // where it leaves the cloud
+  var DIR        = new THREE.Vector3(1, 0, 0);                  // original direction of travel
+  var CHORD      = 2 * HALF_CHORD;                              // distance entry -> exit
+
+  var C_PHOTON   = 2.0;     // photon (and ghost) speed
+  var V_RIPPLE   = 0.8;     // ripple speed: clearly slower than the photon
+  var T_RIPPLE   = CHORD / V_RIPPLE;   // time for ripples to cross the atom
+  var START_X    = -4.4;    // where the photon starts
+  var END_X      = 9.5;     // new photon is "gone" past this x
+  var DISSOLVE   = 0.4;     // seconds the photon takes to dissolve into the cloud
+
+  /* ---- timeline, in simulation seconds (the clock stops at each pause) ---- */
+  var T_HIT = (ENTRY.x - START_X) / C_PHOTON;   // photon touches the cloud
+  var T_P1  = T_HIT + 0.9;                      // pause 1: shortly after the hit, so rings are visible
+  var T_P2  = T_HIT + T_RIPPLE / 2;             // pause 2: ripples exactly midway
+  var T_EM  = T_HIT + T_RIPPLE;                 // ripples reach the exit: new photon is created
+  var T_P3  = T_EM + 0.45;                      // pause 3: just after re-emission
+  var T_END = T_EM + (END_X - EXIT.x) / C_PHOTON; // new photon has left the view
+
+  var TEXT = {
+    1: 'The energy of the photon has been transferred to the cloud, and the photon has ceased to exist.',
+    2: 'The ripples take more time to reach the other side of the atom. Because of this, the time taken increases, and the result is seen as a slowing of the speed of light.',
+    3: 'Total energy is conserved. No more ripples are created, and all of their energy is now in the new photon.',
+    4: 'The new photon follows the ghost photon along the same line, but it arrives later. That delay is the slowing of light.'
+  };
+  var STATUS = [
+    'A photon travels toward the electron cloud.',
+    'The photon has been absorbed by the cloud.',
+    'The energy crosses the cloud as ripples, slower than the photon.',
+    'A new photon leaves along the original line.'
+  ];
+
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
+  function smooth(a, b, x) { var t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); }
+  function gauss() { // Box-Muller normal random number
+    var u = 1 - Math.random(), v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  /* =====================================================================
+   *  RENDERER, SCENE, CAMERA
+   * ===================================================================== */
+  var canvas = $('gl');
+  var stageEl = $('stage');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setClearColor(0x000000, 0);
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(0, 0, CAM_Z);   // fixed forever: no zoom, no pan
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld(true);
+
+  // Everything that belongs to the atom lives in this group. Dragging turns
+  // the group, so cloud, nucleus, photons, ripples and path turn as one object.
+  var atom = new THREE.Group();
+  atom.rotation.set(0.2, -0.4, 0);
+  scene.add(atom);
+
+  /* =====================================================================
+   *  RIPPLE FIELD (shared GLSL)
+   *  Ripples are a train of rings expanding from the entry point E. The
+   *  front moves at V_RIPPLE. A beam-shaped envelope around the photon line
+   *  narrows over time, so the energy funnels toward the exit point X.
+   * ===================================================================== */
+  var U = {
+    uTime:        { value: 0 },
+    uE:           { value: ENTRY.clone() },
+    uX:           { value: EXIT.clone() },
+    uDir:         { value: DIR.clone() },
+    uFront:       { value: 0 },        // current radius of the leading ring
+    uLen:         { value: CHORD },
+    uAmp:         { value: 0 },        // 0 = calm cloud, 1 = rippling
+    uFocus:       { value: 0 },        // glow gathering at the exit point
+    uScale:       { value: 300 },      // pixels per unit at distance 1 (point sizing)
+    uCloudColor:  { value: new THREE.Color(0x5b8cff) },
+    uRippleColor: { value: new THREE.Color(0xff6fa5) }
+  };
+
+  var RIPPLE_GLSL = [
+    'uniform float uTime;',
+    'uniform vec3 uE; uniform vec3 uX; uniform vec3 uDir;',
+    'uniform float uFront; uniform float uLen; uniform float uAmp; uniform float uFocus;',
+    'float ripple(vec3 p){',
+    '  vec3 rel = p - uE;',
+    '  float d = length(rel);',
+    '  float along = dot(rel, uDir);',
+    '  float perp = length(rel - uDir * along);',
+    '  float s = clamp(uFront / uLen, 0.0, 1.0);',
+    '  float w = mix(1.7, 0.45, s * s);            // beam narrows toward the exit',
+    '  float env = exp(-(perp * perp) / (w * w));',
+    '  float f = 0.0;',
+    '  for (int k = 0; k < 6; k++) {                // a train of rings, fading behind the front',
+    '    float rk = uFront - float(k) * 0.5;',
+    '    if (rk > 0.0) {',
+    '      float x = (d - rk) / 0.2;',
+    '      f += pow(0.72, float(k)) * exp(-x * x);',
+    '    }',
+    '  }',
+    '  f *= env;',
+    '  vec3 dx = p - uX;',
+    '  f += uFocus * exp(-dot(dx, dx) / 0.18);       // energy concentrating at the exit point',
+    '  return f * uAmp;',
+    '}'
+  ].join('\n');
+
+  /* =====================================================================
+   *  ELECTRON CLOUD: many fine glowing points, denser toward the centre
+   * ===================================================================== */
+  (function buildCloud() {
+    var N = 22000, sigma = 0.46 * R;
+    var pos = new Float32Array(N * 3), seed = new Float32Array(N);
+    for (var i = 0; i < N; i++) {
+      var x, y, z;
+      do { x = gauss() * sigma; y = gauss() * sigma; z = gauss() * sigma; }
+      while (x * x + y * y + z * z > R * R);       // keep it inside the cloud radius
+      pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+      seed[i] = Math.random();
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+
+    var mat = new THREE.ShaderMaterial({
+      uniforms: U,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: [
+        RIPPLE_GLSL,
+        'attribute float aSeed;',
+        'uniform float uScale;',
+        'varying float vRipple; varying float vAlpha;',
+        'void main(){',
+        '  vec3 p = position;',
+        '  float f = ripple(p);',
+        '  float shimmer = sin(uTime * 0.8 + aSeed * 40.0);',
+        '  p += normalize(p + 1e-4) * (0.10 * f + 0.010 * shimmer);   // ripples lift the cloud',
+        '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
+        '  float dist = -mv.z;',
+        '  float depth = clamp((14.0 - dist) / 4.0, 0.0, 1.0);        // 1 = near side, 0 = far side',
+        '  float r01 = clamp(length(position) / 2.0, 0.0, 1.0);',
+        '  vRipple = f;',
+        '  vAlpha = (0.09 + 0.42 * pow(1.0 - r01, 1.3)) * (0.40 + 0.60 * depth);',
+        '  float size = 0.055 * (0.8 + 0.4 * depth) * (1.0 + 1.6 * min(f, 1.5)) * (0.7 + 0.6 * fract(aSeed * 7.0));',
+        '  gl_PointSize = max(1.5, size * uScale / dist);',
+        '  gl_Position = projectionMatrix * mv;',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uCloudColor; uniform vec3 uRippleColor;',
+        'varying float vRipple; varying float vAlpha;',
+        'void main(){',
+        '  float d = length(gl_PointCoord - 0.5);',
+        '  if (d > 0.5) discard;',
+        '  float soft = smoothstep(0.5, 0.0, d);',
+        '  vec3 col = mix(uCloudColor, uRippleColor, clamp(vRipple * 1.2, 0.0, 1.0));',
+        '  col += vec3(0.35) * clamp(vRipple - 0.8, 0.0, 1.0);',
+        '  float alpha = (vAlpha + 0.8 * min(vRipple, 1.5)) * soft;',
+        '  gl_FragColor = vec4(col, alpha);',
+        '}'
+      ].join('\n')
+    });
+    atom.add(new THREE.Points(geo, mat));
+  })();
+
+  /* A faint glassy shell on the cloud surface: it shows the rings and bulges
+     where the ripples pass, and gives the sphere a rim light. */
+  (function buildShell() {
+    var mat = new THREE.ShaderMaterial({
+      uniforms: U,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: [
+        RIPPLE_GLSL,
+        'varying vec3 vN; varying vec3 vV; varying float vF;',
+        'void main(){',
+        '  float f = ripple(position);',
+        '  vec3 p = position + normal * 0.11 * f;                       // surface bulges with the ripple',
+        '  vec4 mv = modelViewMatrix * vec4(p, 1.0);',
+        '  vN = normalize(normalMatrix * normal);',
+        '  vV = normalize(-mv.xyz);',
+        '  vF = f;',
+        '  gl_Position = projectionMatrix * mv;',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uCloudColor; uniform vec3 uRippleColor;',
+        'varying vec3 vN; varying vec3 vV; varying float vF;',
+        'void main(){',
+        '  float fres = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);',
+        '  vec3 col = mix(uCloudColor, uRippleColor, clamp(vF, 0.0, 1.0));',
+        '  float alpha = 0.03 + 0.20 * fres + 0.50 * min(vF, 1.5);',
+        '  gl_FragColor = vec4(col, alpha);',
+        '}'
+      ].join('\n')
+    });
+    atom.add(new THREE.Mesh(new THREE.SphereGeometry(R, 128, 96), mat));
+  })();
+
+  /* =====================================================================
+   *  SPRITES: soft glow textures for photons, nucleus and the central haze
+   * ===================================================================== */
+  function makeTexture(draw) {
+    var c = document.createElement('canvas'); c.width = c.height = 128;
+    draw(c.getContext('2d'));
+    return new THREE.CanvasTexture(c);
+  }
+  var glowTex = makeTexture(function (g) {
+    var gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0.00, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.18, 'rgba(255,255,255,.85)');
+    gr.addColorStop(0.40, 'rgba(255,255,255,.25)');
+    gr.addColorStop(1.00, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  });
+  var dotTex = makeTexture(function (g) {
+    var gr = g.createRadialGradient(64, 64, 0, 64, 64, 60);
+    gr.addColorStop(0.0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.7, 'rgba(255,255,255,1)');
+    gr.addColorStop(1.0, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  });
+
+  function makeSprite(tex, color, size, opacity) {
+    var s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, color: color, transparent: true, opacity: opacity,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
+    }));
+    s.scale.set(size, size, 1);
+    return s;
+  }
+
+  // soft blue haze at the middle of the cloud (gives the gradient its "density")
+  atom.add(makeSprite(glowTex, 0x4a78ff, 4.4, 0.20));
+
+  // nucleus: a tiny bright dot at the centre; the cloud's haze covers it
+  var nucleus = new THREE.Group();
+  nucleus.add(makeSprite(glowTex, 0xffd9a8, 0.55, 0.55));
+  nucleus.add(makeSprite(glowTex, 0xffffff, 0.15, 0.95));
+  atom.add(nucleus);
+
+  /* ---- photons: a bright point (core) inside a soft glow ---- */
+  function makePhoton() {
+    var g = new THREE.Group();
+    g.userData.glow = makeSprite(glowTex, 0xffe58a, 0.85, 1);
+    g.userData.core = makeSprite(glowTex, 0xffffff, 0.24, 1);
+    g.add(g.userData.glow, g.userData.core);
+    return g;
+  }
+  function look(p, opacity, scale) {
+    p.userData.glow.material.opacity = opacity;
+    p.userData.core.material.opacity = opacity;
+    p.scale.setScalar(scale);
+  }
+  var photon    = makePhoton();   // the incoming photon
+  var ghost     = makePhoton();   // the photon as it would have travelled if never absorbed
+  var newPhoton = makePhoton();   // the re-emitted photon
+  atom.add(photon, ghost, newPhoton);
+
+  /* ---- dotted path of the ghost photon, along the same straight line ---- */
+  var pathDots = (function () {
+    var pts = [], step = 0.25;
+    for (var x = ENTRY.x; x <= END_X + 1.5; x += step) pts.push(x, OFFSET_Y, 0);
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    var m = new THREE.Points(geo, new THREE.PointsMaterial({
+      map: dotTex, color: 0xdfe6ff, size: 0.075, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
+    }));
+    m.frustumCulled = false;
+    atom.add(m);
+    return m;
+  })();
+
+  /* ---- small spark bursts: photon dissolving into the cloud / new photon appearing ---- */
+  function makeSparks(inward) {
+    var N = 48, dirs = [], speed = [];
+    for (var i = 0; i < N; i++) {
+      var v = new THREE.Vector3(gauss(), gauss(), gauss()).normalize();
+      if (inward && v.x < 0) v.x = -v.x;           // spill into the cloud, not back out
+      dirs.push(v); speed.push(0.25 + Math.random() * 0.6);
+    }
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    var pts = new THREE.Points(geo, new THREE.PointsMaterial({
+      map: glowTex, color: 0xffe58a, size: 0.2, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false
+    }));
+    pts.frustumCulled = false;
+    pts.userData = { dirs: dirs, speed: speed };
+    atom.add(pts);
+    return pts;
+  }
+  function setSparks(obj, origin, age, dur) {
+    if (age < 0 || age > dur) { obj.visible = false; return; }
+    obj.visible = true;
+    var a = obj.geometry.attributes.position.array, d = obj.userData.dirs, s = obj.userData.speed;
+    for (var i = 0; i < d.length; i++) {
+      a[i * 3]     = origin.x + d[i].x * s[i] * age;
+      a[i * 3 + 1] = origin.y + d[i].y * s[i] * age;
+      a[i * 3 + 2] = origin.z + d[i].z * s[i] * age;
+    }
+    obj.geometry.attributes.position.needsUpdate = true;
+    obj.material.opacity = Math.pow(1 - age / dur, 1.5);
+  }
+  var sparksIn  = makeSparks(true);
+  var sparksOut = makeSparks(false);
+
+  /* =====================================================================
+   *  SIMULATION STATE
+   * ===================================================================== */
+  var sim;
+  var shownP = 1;                       // smoothed photon share of the energy bar (0..1)
+  function resetSim() {
+    sim = { t: 0, paused: false, done: false, which: 0, s1: false, s2: false, s3: false, cont1: false };
+    shownP = 1;
+    $('panel').hidden = true;
+  }
+  resetSim();
+
+  function pauseAt(n) {
+    sim.paused = true; sim.which = n;
+    $('panelText').textContent = TEXT[n];
+    $('btn').textContent = 'Continue';
+    $('panel').hidden = false;
+    try { $('btn').focus({ preventScroll: true }); } catch (e) {}
+  }
+  function finish() {
+    sim.done = true; sim.which = 4;
+    $('panelText').textContent = TEXT[4];
+    $('btn').textContent = 'Replay';
+    $('panel').hidden = false;
+    $('status').textContent = 'The new photon trails the ghost photon by the time the ripples took.';
+    try { $('btn').focus({ preventScroll: true }); } catch (e) {}
+  }
+  $('btn').addEventListener('click', function () {
+    if (sim.done) { resetSim(); lastStage = -1; return; }        // Replay
+    if (sim.which === 1) sim.cont1 = true;                       // leaving the first pause = "Absorbed" is over
+    sim.paused = false;
+    $('panel').hidden = true;
+  });
+
+  /* The clock only runs while not paused. It stops exactly at the three
+     pause moments: first hit, ripples midway, after re-emission. */
+  function advance(dt) {
+    if (sim.paused || sim.done) return;
+    var t = sim.t + dt;
+    if (!sim.s1 && t >= T_P1)             { sim.t = T_P1; sim.s1 = true; pauseAt(1); return; }
+    if (sim.s1 && !sim.s2 && t >= T_P2)   { sim.t = T_P2; sim.s2 = true; pauseAt(2); return; }
+    if (sim.s2 && !sim.s3 && t >= T_P3)   { sim.t = T_P3; sim.s3 = true; pauseAt(3); return; }
+    if (sim.s3 && t >= T_END)             { sim.t = T_END; finish(); return; }
+    sim.t = t;
+  }
+
+  /* =====================================================================
+   *  POSE EVERYTHING FOR THE CURRENT SIM TIME
+   * ===================================================================== */
+  function applyState(dt) {
+    var t = sim.t, ts = t - T_HIT, te = ts - T_RIPPLE;   // ts: since the hit, te: since re-emission
+
+    // 1. the incoming photon: constant speed, then dissolves at the entry point
+    if (t < T_HIT) {
+      photon.visible = true;
+      photon.position.set(START_X + C_PHOTON * t, OFFSET_Y, 0);
+      look(photon, 1, 1);
+    } else {
+      var k = clamp01(ts / DISSOLVE);
+      photon.visible = k < 1;
+      photon.position.set(ENTRY.x + 0.25 * ts, OFFSET_Y, 0);
+      look(photon, (1 - k) * (1 - k), 1 + 0.6 * k);
+    }
+
+    // 2. ghost photon + dotted path: appear at the hit, keep the original speed and line
+    if (ts >= 0) {
+      ghost.visible = true;
+      ghost.position.set(ENTRY.x + C_PHOTON * ts, OFFSET_Y, 0);
+      look(ghost, 0.34 * clamp01(ts / 0.25), 1);
+      pathDots.visible = true;
+      pathDots.material.opacity = 0.7 * clamp01(ts / 0.4);
+    } else {
+      ghost.visible = false; pathDots.visible = false;
+    }
+
+    // 3. ripples: travel from the entry side to the far side, slower than the photon.
+    //    At ts >= T_RIPPLE everything is switched off at once and never comes back.
+    var amp = 0, front = 0, focus = 0;
+    if (ts >= 0 && ts < T_RIPPLE) {
+      amp = smooth(0, 0.3, ts);
+      front = V_RIPPLE * ts;
+      focus = 1.4 * smooth(0.55, 1.0, ts / T_RIPPLE);
+    }
+    U.uAmp.value = amp; U.uFront.value = front; U.uFocus.value = focus;
+
+    // 4. new photon: born at the exit point the moment the ripples are destroyed
+    if (te >= 0) {
+      newPhoton.visible = true;
+      newPhoton.position.set(EXIT.x + C_PHOTON * te, OFFSET_Y, 0);
+      look(newPhoton, clamp01(te / 0.12), 1 + 0.6 * (1 - clamp01(te / 0.4)));
+    } else {
+      newPhoton.visible = false;
+    }
+
+    // 5. sparks
+    setSparks(sparksIn, ENTRY, ts, 0.8);
+    setSparks(sparksOut, EXIT, te, 0.8);
+
+    // 6. energy bar: photon + ripples always add up to 100%
+    var target = (ts >= 0 && ts < T_RIPPLE) ? 0 : 1;
+    shownP += (target - shownP) * Math.min(1, dt * 9);
+    var pP = Math.round(shownP * 100), pR = 100 - pP;
+    $('segPhoton').style.width = pP + '%';
+    $('segRipples').style.width = pR + '%';
+    $('pPhoton').textContent = pP + '%';
+    $('pRipples').textContent = pR + '%';
+
+    // 7. stage row + status line
+    var stage = (t < T_HIT) ? 0 : (!sim.cont1 ? 1 : (t < T_EM ? 2 : 3));
+    if (stage !== lastStage) {
+      lastStage = stage;
+      var items = $('stages').children;
+      for (var i = 0; i < items.length; i++) items[i].className = i < stage ? 'done' : (i === stage ? 'on' : '');
+      if (!sim.done) $('status').textContent = STATUS[stage];
+    }
+    if (sim.done) $('status').textContent = 'The new photon trails the ghost photon by the time the ripples took.';
+  }
+  var lastStage = -1;
+
+  /* =====================================================================
+   *  TURNING THE ATOM BY DRAG / SWIPE  (only the model turns, never the camera)
+   * ===================================================================== */
+  var AXIS_X = new THREE.Vector3(1, 0, 0), AXIS_Y = new THREE.Vector3(0, 1, 0);
+  var qx = new THREE.Quaternion(), qy = new THREE.Quaternion();
+  var dragging = false, lx = 0, ly = 0, velX = 0, velY = 0;
+  function turn(dx, dy) {
+    qy.setFromAxisAngle(AXIS_Y, dx * 0.0065);
+    qx.setFromAxisAngle(AXIS_X, dy * 0.0065);
+    atom.quaternion.premultiply(qy).premultiply(qx).normalize();
+  }
+  canvas.addEventListener('pointerdown', function (e) {
+    dragging = true; lx = e.clientX; ly = e.clientY; velX = velY = 0;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    canvas.classList.add('grabbing');
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - lx, dy = e.clientY - ly;
+    lx = e.clientX; ly = e.clientY;
+    velX = dx; velY = dy;
+    turn(dx, dy);
+  });
+  function endDrag() { dragging = false; canvas.classList.remove('grabbing'); }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  /* =====================================================================
+   *  FLOATING LABELS: HTML text pinned to 3D points of the model
+   * ===================================================================== */
+  var W = 1, H = 1;
+  var ORIGIN = new THREE.Vector3(0, 0, 0);
+  var CLOUD_ANCHOR = new THREE.Vector3(-1.35, 1.3, 0);
+  var tmp = new THREE.Vector3();
+  var TAGS = [
+    { el: $('tag-photon'),  anchor: function () { return photon.position; },    show: function () { return sim.t < T_HIT + DISSOLVE; }, dx: 12, dy: -20 },
+    { el: $('tag-cloud'),   anchor: function () { return CLOUD_ANCHOR; },       show: function () { return true; }, left: true, dx: -10, dy: -6 },
+    { el: $('tag-nucleus'), anchor: function () { return ORIGIN; },             show: function () { return true; }, dx: 12, dy: 12 },
+    { el: $('tag-ghost'),   anchor: function () { return ghost.position; },     show: function () { return sim.s2; }, clamp: true, dx: 12, dy: -20 },
+    { el: $('tag-new'),     anchor: function () { return newPhoton.position; }, show: function () { return sim.t >= T_EM; }, clamp: true, dx: 12, dy: -20 }
+  ];
+  function updateTags() {
+    atom.updateMatrixWorld(true);
+    for (var i = 0; i < TAGS.length; i++) {
+      var T = TAGS[i], show = T.show();
+      T.el.hidden = !show;
+      if (!show) continue;
+      tmp.copy(T.anchor()); atom.localToWorld(tmp); tmp.project(camera);
+      if (tmp.z > 1) { T.el.hidden = true; continue; }          // behind the observer
+      var x = (tmp.x * 0.5 + 0.5) * W, y = (-tmp.y * 0.5 + 0.5) * H;
+      var tw = T.el.offsetWidth, th = T.el.offsetHeight;
+      var px = x + T.dx - (T.left ? tw : 0), py = y + T.dy - th / 2, edge = '';
+      if (T.clamp) {                                             // keep it on screen with an arrow when it has left the view
+        if (x > W - 12) edge = 'r'; else if (x < 12) edge = 'l';
+        px = Math.max(12, Math.min(W - tw - 12, px));
+        py = Math.max(120, Math.min(H - 190, py));
+      }
+      if (T.el.dataset.edge !== edge) T.el.dataset.edge = edge;
+      T.el.style.transform = 'translate(' + px.toFixed(1) + 'px,' + py.toFixed(1) + 'px)';
+    }
+  }
+
+  /* =====================================================================
+   *  RESIZE: fill the window. The observer distance stays CAM_Z; only the
+   *  field of view widens on tall phone screens so the whole cloud fits.
+   * ===================================================================== */
+  function resize() {
+    var r = stageEl.getBoundingClientRect();
+    W = Math.max(1, r.width); H = Math.max(1, r.height);
+    renderer.setSize(W, H, false);
+    camera.aspect = W / H;
+    var halfH = Math.min(8.7, Math.max(3.5, 4.0 / camera.aspect));  // visible half-height at the atom
+    camera.fov = 2 * Math.atan(halfH / CAM_Z) * 180 / Math.PI;
+    camera.updateProjectionMatrix();
+    U.uScale.value = (H * renderer.getPixelRatio()) / (2 * Math.tan(camera.fov * Math.PI / 360));
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  /* =====================================================================
+   *  MAIN LOOP: starts by itself
+   * ===================================================================== */
+  var last = 0;
+  function frame(now) {
+    var dt = Math.min(0.05, last ? (now - last) / 1000 : 0.016);
+    last = now;
+    advance(dt);
+    U.uTime.value += dt;
+    applyState(dt);
+    if (!dragging && (Math.abs(velX) > 0.05 || Math.abs(velY) > 0.05)) {   // gentle spin after a flick
+      turn(velX, velY); velX *= 0.93; velY *= 0.93;
+    }
+    renderer.render(scene, camera);
+    updateTags();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // test hook (used only to check the timeline from outside)
+  window.__theory2 = { sim: function () { return sim; }, T: { HIT: T_HIT, P1: T_P1, P2: T_P2, EM: T_EM, P3: T_P3, END: T_END } };
+})();
+</script>
+
+</body>
+</html>
